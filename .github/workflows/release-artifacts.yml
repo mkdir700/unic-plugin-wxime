@@ -1,0 +1,251 @@
+name: Build Release Artifacts
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPENSSL_VERSION: "3.5.9"
+  OPENSSL_SHA256: "603f5602e2eef00d77fbd429d34dcd5822bb301757a1bc9cdb24c670f1eb859a"
+
+jobs:
+  build:
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: darwin-arm64
+            runner: macos-15
+            goos: darwin
+            goarch: arm64
+            exe: unic-plugin-wxime
+            openssl_target: darwin64-arm64-cc
+          - target: darwin-amd64
+            runner: macos-15-intel
+            goos: darwin
+            goarch: amd64
+            exe: unic-plugin-wxime
+            openssl_target: darwin64-x86_64-cc
+          - target: linux-amd64
+            runner: ubuntu-24.04
+            goos: linux
+            goarch: amd64
+            exe: unic-plugin-wxime
+          - target: linux-arm64
+            runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+            exe: unic-plugin-wxime
+          - target: windows-amd64
+            runner: windows-2025
+            goos: windows
+            goarch: amd64
+            exe: unic-plugin-wxime.exe
+            msystem: UCRT64
+            msys_pkgs: mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-pkgconf mingw-w64-ucrt-x86_64-openssl
+          - target: windows-arm64
+            runner: windows-11-arm
+            goos: windows
+            goarch: arm64
+            exe: unic-plugin-wxime.exe
+            msystem: CLANGARM64
+            msys_pkgs: mingw-w64-clang-aarch64-clang mingw-w64-clang-aarch64-pkgconf mingw-w64-clang-aarch64-openssl
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+
+      - name: Build and verify on macOS
+        if: matrix.goos == 'darwin'
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v pkg-config >/dev/null || brew install pkg-config
+
+          WORK="$RUNNER_TEMP/openssl-build"
+          mkdir -p "$WORK" dist
+          curl -fsSL "https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz" -o "$WORK/openssl.tar.gz"
+          echo "${OPENSSL_SHA256}  $WORK/openssl.tar.gz" | shasum -a 256 -c -
+          tar -xzf "$WORK/openssl.tar.gz" -C "$WORK"
+
+          OSSL_DIR="$WORK/openssl-${OPENSSL_VERSION}"
+          export MACOSX_DEPLOYMENT_TARGET=13.0
+          (
+            cd "$OSSL_DIR"
+            ./Configure "${{ matrix.openssl_target }}" \
+              no-shared no-apps no-tests no-docs no-ssl3 no-tls1 no-dtls no-quic no-dso no-engine no-module no-legacy
+            make -j"$(sysctl -n hw.ncpu)" libcrypto.a
+          )
+
+          PC_DIR="$WORK/pc"
+          mkdir -p "$PC_DIR"
+          cat > "$PC_DIR/openssl.pc" <<EOF
+          Name: OpenSSL
+          Description: Static OpenSSL libcrypto
+          Version: ${OPENSSL_VERSION}
+          Cflags: -I${OSSL_DIR}/include
+          Libs: ${OSSL_DIR}/libcrypto.a
+          EOF
+
+          export CGO_ENABLED=1
+          export PKG_CONFIG_PATH="$PC_DIR"
+          go test -count=1 -v ./...
+          go build -trimpath -mod=readonly -ldflags="-s -w" -o "dist/${{ matrix.exe }}" ./cmd/unic-plugin-wxime
+
+          OTOOL_OUT="$(otool -L "dist/${{ matrix.exe }}")"
+          echo "$OTOOL_OUT"
+          if echo "$OTOOL_OUT" | grep -Eqi 'libcrypto|libssl|homebrew|/usr/local'; then
+            echo "ERROR: non-system dynamic library dependency detected" >&2
+            exit 1
+          fi
+          otool -l "dist/${{ matrix.exe }}" | grep -A 4 LC_BUILD_VERSION
+
+      - name: Build and verify on Linux (musl static)
+        if: matrix.goos == 'linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          GOROOT_HOST="$(go env GOROOT)"
+          docker run --rm \
+            -v "$PWD:/work" \
+            -v "$GOROOT_HOST:/usr/local/go:ro" \
+            -w /work \
+            alpine:3.21 \
+            sh -eu -c '
+              apk add --no-cache build-base pkgconf openssl-dev openssl-libs-static file
+              mkdir -p /tmp/pc
+              cat > /tmp/pc/openssl.pc <<EOF
+          Name: OpenSSL
+          Description: Static OpenSSL libcrypto
+          Version: 3.0.0
+          Cflags: -I/usr/include
+          Libs: /usr/lib/libcrypto.a
+          EOF
+              export PATH="/usr/local/go/bin:$PATH"
+              export CGO_ENABLED=1
+              export PKG_CONFIG_PATH=/tmp/pc
+              go test -count=1 -v ./...
+              go build -trimpath -mod=readonly -ldflags="-s -w -linkmode external -extldflags -static" -o "dist/${{ matrix.exe }}" ./cmd/unic-plugin-wxime
+              FILE_OUT="$(file "dist/${{ matrix.exe }}")"
+              echo "$FILE_OUT"
+              echo "$FILE_OUT" | grep -q "statically linked"
+            '
+
+      - name: Set up MSYS2 on Windows
+        if: matrix.goos == 'windows'
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: ${{ matrix.msystem }}
+          update: true
+          path-type: inherit
+          install: ${{ matrix.msys_pkgs }}
+
+      - name: Build and verify on Windows
+        if: matrix.goos == 'windows'
+        shell: msys2 {0}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          MINGW_WIN="$(cygpath -m "$MINGW_PREFIX")"
+          PC_DIR="$(mktemp -d)"
+          PC_WIN="$(cygpath -m "$PC_DIR")"
+          cat > "$PC_DIR/openssl.pc" <<EOF
+          Name: OpenSSL
+          Description: Static OpenSSL libcrypto
+          Version: 3.0.0
+          Cflags: -I${MINGW_WIN}/include
+          Libs: ${MINGW_WIN}/lib/libcrypto.a -lws2_32 -lcrypt32 -lbcrypt
+          EOF
+
+          export CGO_ENABLED=1
+          export PKG_CONFIG_PATH="$PC_WIN"
+          if [ "${{ matrix.msystem }}" = "CLANGARM64" ]; then
+            export CC=clang
+            LDFLAGS='-s -w'
+          else
+            export CC=gcc
+            LDFLAGS='-s -w -extldflags "-static-libgcc"'
+          fi
+
+          go test -count=1 -v ./...
+          go build -trimpath -mod=readonly -ldflags="$LDFLAGS" -o "dist/${{ matrix.exe }}" ./cmd/unic-plugin-wxime
+
+          if command -v llvm-objdump >/dev/null 2>&1; then
+            DLLS="$(llvm-objdump -p "dist/${{ matrix.exe }}" | grep -i "DLL Name:" || true)"
+          else
+            DLLS="$(objdump -p "dist/${{ matrix.exe }}" | grep -i "DLL Name:" || true)"
+          fi
+          echo "$DLLS"
+          if echo "$DLLS" | grep -Eqi 'libcrypto|libssl|libgcc|libwinpthread|libc\+\+|libunwind'; then
+            echo "ERROR: non-system DLL dependency detected" >&2
+            exit 1
+          fi
+
+      - name: Package deterministic archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          ARCHIVE="dist/unic-plugin-wxime_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz"
+          PYTHON="$(command -v python3 || command -v python)"
+          "$PYTHON" - "dist/${{ matrix.exe }}" "$ARCHIVE" "${{ matrix.exe }}" <<'PY'
+          import gzip, hashlib, os, sys, tarfile
+
+          src, archive, name = sys.argv[1], sys.argv[2], sys.argv[3]
+          with open(src, "rb") as f:
+              data = f.read()
+          with open(archive, "wb") as raw:
+              with gzip.GzipFile(filename="", mode="wb", fileobj=raw, mtime=0) as gz:
+                  with tarfile.open(fileobj=gz, mode="w", format=tarfile.USTAR_FORMAT) as tf:
+                      info = tarfile.TarInfo(name=name)
+                      info.size = len(data)
+                      info.mode = 0o755
+                      info.mtime = 0
+                      info.uid = 0
+                      info.gid = 0
+                      info.uname = ""
+                      info.gname = ""
+                      tf.addfile(info, io := __import__("io").BytesIO(data))
+          digest = hashlib.sha256(open(archive, "rb").read()).hexdigest()
+          print(f"{digest}  {os.path.basename(archive)}")
+          with open(archive + ".sha256", "w", encoding="utf-8") as out:
+              out.write(f"{digest}  {os.path.basename(archive)}\n")
+          PY
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: asset-${{ matrix.target }}
+          path: |
+            dist/unic-plugin-wxime_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz
+            dist/unic-plugin-wxime_${{ matrix.goos }}_${{ matrix.goarch }}.tar.gz.sha256
+          if-no-files-found: error
+
+  bundle:
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/download-artifact@v6
+        with:
+          pattern: asset-*
+          merge-multiple: true
+          path: bundle
+      - name: Assemble SHA256SUMS
+        run: |
+          set -euo pipefail
+          cd bundle
+          LC_ALL=C cat *.sha256 | sort -k2,2 > SHA256SUMS
+          rm -f *.sha256
+          sha256sum -c SHA256SUMS
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v6
+        with:
+          name: wxime-release-assets
+          path: bundle/
+          if-no-files-found: error
