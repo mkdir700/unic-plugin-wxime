@@ -216,7 +216,7 @@ jobs:
                       tf.addfile(info, io := __import__("io").BytesIO(data))
           digest = hashlib.sha256(open(archive, "rb").read()).hexdigest()
           print(f"{digest}  {os.path.basename(archive)}")
-          with open(archive + ".sha256", "w", encoding="utf-8") as out:
+          with open(archive + ".sha256", "w", encoding="utf-8", newline="\n") as out:
               out.write(f"{digest}  {os.path.basename(archive)}\n")
           PY
 

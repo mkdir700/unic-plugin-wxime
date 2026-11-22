@@ -11,19 +11,21 @@ the service accepted the content.
 Use a `unic` and `unicd` build from the UniClipboard
 [external channel pairing branch](https://github.com/UniClipboard/UniClipboard/tree/feat/external-channel-pairing)
 or a later compatible release. Use an initialized UniClipboard profile.
-Source installation needs Go 1.27.3 or later on `PATH`, CGO, a C compiler,
-`pkg-config`, and OpenSSL development files with secp128r1 support.
-Use `GOTOOLCHAIN=local go version` to check the toolchain used by the installer.
 
-On macOS, install `openssl@3` and `pkg-config` with Homebrew and export the
-OpenSSL metadata path before starting the service or invoking the installer.
-On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libssl-dev`.
+Install the prebuilt plugin for macOS (13+), Linux, or Windows (`amd64` / `arm64`).
+The prebuilt binaries statically link OpenSSL `libcrypto` and require no local Go
+toolchain or OpenSSL installation. The installer verifies the SHA-256 digest.
 
 ```sh
-export PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig"
-unic plugin install https://github.com/mkdir700/unic-plugin-wxime --build
+unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.0
 unic plugin enable unic.wxime
 ```
+
+To build from source instead (`--build`), you need Go 1.27.3 or later on `PATH`,
+CGO, a C compiler, `pkg-config`, and OpenSSL development files with secp128r1
+support (`GOTOOLCHAIN=local go version`). On macOS, install `openssl@3` and
+`pkg-config` with Homebrew and export `PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig"`.
+On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libssl-dev`.
 
 Restart the service after enabling the plugin. In WeType, generate a pairing
 code for an authorized group. Run the following command. Enter the code at the
