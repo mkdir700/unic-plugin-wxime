@@ -10,9 +10,10 @@ the service accepted the content.
 
 Use a `unic` and `unicd` build from the UniClipboard
 [external channel pairing branch](https://github.com/UniClipboard/UniClipboard/tree/feat/external-channel-pairing)
-or a later compatible release. Source installation needs Go 1.27.3 or later,
-CGO, a C compiler, `pkg-config`, and OpenSSL development files with
-secp128r1 support.
+or a later compatible release. Use an initialized UniClipboard profile.
+Source installation needs Go 1.27.3 or later on `PATH`, CGO, a C compiler,
+`pkg-config`, and OpenSSL development files with secp128r1 support.
+Use `GOTOOLCHAIN=local go version` to check the toolchain used by the installer.
 
 On macOS, install `openssl@3` and `pkg-config` with Homebrew and export the
 OpenSSL metadata path before starting the service or invoking the installer.
