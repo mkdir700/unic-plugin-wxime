@@ -81,6 +81,7 @@ jobs:
             cd "$OSSL_DIR"
             ./Configure "${{ matrix.openssl_target }}" \
               no-shared no-apps no-tests no-docs no-ssl3 no-tls1 no-dtls no-quic no-dso no-engine no-module no-legacy
+            make build_generated
             make -j"$(sysctl -n hw.ncpu)" libcrypto.a
           )
 
