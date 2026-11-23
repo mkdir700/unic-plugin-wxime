@@ -17,7 +17,7 @@ The prebuilt binaries statically link OpenSSL `libcrypto` and require no local G
 toolchain or OpenSSL installation. The installer verifies the SHA-256 digest.
 
 ```sh
-unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.0
+unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.1
 unic plugin enable unic.wxime
 ```
 
