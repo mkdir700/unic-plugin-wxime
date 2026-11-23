@@ -15,49 +15,49 @@ settings_sha256 = "e15146829beafb50497b43943c8889bcce30fce961c0db72c2d7a46461436
 [[artifacts]]
 goos = "darwin"
 goarch = "amd64"
-release = "v0.1.0"
+release = "v0.1.1"
 asset = "unic-plugin-wxime_darwin_amd64.tar.gz"
 executable = "unic-plugin-wxime"
-sha256 = "82211e2866f8a6f309cfb18212b9fc2c0eafb472c74b42dbccb972650870bf39"
+sha256 = "4d80ccb31b2fb01883316d08b1f6c3bf4a41ffdaa15b2fa909d4b1e967bff576"
 minimum_os = "13.0"
 
 [[artifacts]]
 goos = "darwin"
 goarch = "arm64"
-release = "v0.1.0"
+release = "v0.1.1"
 asset = "unic-plugin-wxime_darwin_arm64.tar.gz"
 executable = "unic-plugin-wxime"
-sha256 = "c08cc5400e4b52b536e4f1a5a629c46d66ff7dbb12509484cf8845c988be97f9"
+sha256 = "89ed0f150edc1792191cfa10772ecadd01410c3fa07bdb19b41fc34d7b9c8f29"
 minimum_os = "13.0"
 
 [[artifacts]]
 goos = "linux"
 goarch = "amd64"
-release = "v0.1.0"
+release = "v0.1.1"
 asset = "unic-plugin-wxime_linux_amd64.tar.gz"
 executable = "unic-plugin-wxime"
-sha256 = "d0c193402934b3136ee7a695a0c188ad973f03b774d7f9266bf87b8ebc04f503"
+sha256 = "913e9caeeffe947496497bdffbca6f8ef227ca8b919d800bca7f941a0f20196e"
 
 [[artifacts]]
 goos = "linux"
 goarch = "arm64"
-release = "v0.1.0"
+release = "v0.1.1"
 asset = "unic-plugin-wxime_linux_arm64.tar.gz"
 executable = "unic-plugin-wxime"
-sha256 = "39b561d13f296fc828733091b33ced2ba6d691f743d5a3893f8cbcce53b48c93"
+sha256 = "80cc5799152ae7bb31a48028ad6ffcbeae16e83de51aefde31a677f9c3659ddc"
 
 [[artifacts]]
 goos = "windows"
 goarch = "amd64"
-release = "v0.1.0"
+release = "v0.1.1"
 asset = "unic-plugin-wxime_windows_amd64.tar.gz"
 executable = "unic-plugin-wxime.exe"
-sha256 = "ca94ffe4fcfa2df92d25f41a780fa414af9fd8ff7fc2ab6c11135241cf1903c6"
+sha256 = "4c65a1c2b90581a5c249cc1da740563c81afd7f6e79f7c9988f0ba0d1a46a9ec"
 
 [[artifacts]]
 goos = "windows"
 goarch = "arm64"
-release = "v0.1.0"
+release = "v0.1.1"
 asset = "unic-plugin-wxime_windows_arm64.tar.gz"
 executable = "unic-plugin-wxime.exe"
-sha256 = "55c870f666c48dcea1f3e324a1ef96327b099fc7190621b9db44030a421a2afb"
+sha256 = "9d15ee7a83cd5b54b41e7d9741dd1e72caacd09e22cc90866ac812be26319025"
