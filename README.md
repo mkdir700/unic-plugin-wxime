@@ -8,20 +8,16 @@ directions. The provider receipt means the service accepted the content.
 
 ## Install and pair
 
-Use a `unic` and `unicd` build from the UniClipboard
-[external channel pairing branch](https://github.com/UniClipboard/UniClipboard/tree/feat/external-channel-pairing)
-or a later compatible release. Use an initialized UniClipboard profile.
+Use a `unic` and `unicd` build with external channel pairing and
+`image_files_as_images` manifest support (UniClipboard Desktop v2.0.0 build 6+
+or CLI v2.0.0 build 5+). Use an initialized UniClipboard profile.
 
 Install the prebuilt plugin for macOS (13+), Linux, or Windows (`amd64` / `arm64`).
 The prebuilt binaries statically link OpenSSL `libcrypto`. The installer verifies
 the SHA-256 digest.
 
-Use the UniClipboard plugin marketplace to install on a host without support
-for plugin manifest icons. On hosts with manifest icon support, you can also
-install the release tag directly.
-
 ```sh
-unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.2
+unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.3
 unic plugin enable unic.wxime
 ```
 
@@ -47,7 +43,10 @@ only on accounts and devices you are authorized to use.
 The plugin supports the latest clipboard value from WeType. It receives UTF-8
 text and, when enabled, PNG and JPEG images. It sends UTF-8 text up to 1 MiB
 and PNG images up to 16 MiB, subject to the Engine and provider limits.
-File transfer is outside the external-channel profile.
+The manifest declares `image_files_as_images = true`, so the host projects a
+single copied image file (such as screenshot files) to PNG under the backend's
+image sync policy while keeping the original file in local history.
+General file transfer is outside the external-channel profile.
 
 Use **Sync images** under the backend's **Sync policy** in UniClipboard.
 Policy changes apply while the service is running. The policy also applies to
