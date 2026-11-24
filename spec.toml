@@ -8,6 +8,7 @@ package = "./cmd/unic-plugin-wxime"
 capabilities = ["sync_backend"]
 transport_kind = "object_store"
 external_channels = true
+image_files_as_images = true
 
 [[artifacts]]
 goos = "darwin"
