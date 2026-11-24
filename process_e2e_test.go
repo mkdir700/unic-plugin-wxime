@@ -70,6 +70,18 @@ func (p fixtureProvider) PollClipboardOnceFromGroup(_ context.Context, group uin
 	if err != nil {
 		return nil, err
 	}
+	if bytes.HasPrefix(data, []byte("\x89PNG\r\n\x1a\n")) {
+		cfg, err := png.DecodeConfig(bytes.NewReader(data))
+		if err != nil {
+			return nil, err
+		}
+		return &sdk.ReceivedClipboard{
+			ID: sdk.ReceivedID{Group: group, Version: uint64(cfg.Width) + 1, FromUin: 10, TraceID: "synthetic-image"},
+			Content: sdk.ClipboardContent{Image: &sdk.DownloadedImage{
+				Path: p.path("incoming"), Bytes: len(data),
+			}},
+		}, nil
+	}
 	text := string(data)
 	return &sdk.ReceivedClipboard{
 		ID:      sdk.ReceivedID{Group: group, Version: 1, FromUin: 10, TraceID: "synthetic"},
@@ -112,7 +124,7 @@ func TestPluginProcessE2E(t *testing.T) {
 		t.Fatal(err)
 	}
 	opts := engine.Options{DataDir: dir, Plugins: []engine.PluginInstance{{
-		Config: plugin.Config{"images": true},
+		Config: plugin.Config{"images": false},
 		Process: &engine.PluginProcess{
 			Path: exe, SHA256: fmt.Sprintf("%x", sha256.Sum256(binary)), Spec: New().Spec(),
 			Args: []string{"-test.run=^$"}, Env: []string{"WXIME_E2E_FIXTURE=" + dir},
@@ -156,7 +168,7 @@ func TestPluginProcessE2E(t *testing.T) {
 			}
 		}
 	}
-	submit := func(requestID, mime string, payload []byte, state engine.TargetState) {
+	commit := func(requestID, mime string, payload []byte) engine.SubmissionResult {
 		t.Helper()
 		lease, err := e.ImportContent(ctx, engine.ContentInput{Representations: []engine.RepresentationInput{{
 			MIME: mime, Size: int64(len(payload)), Reader: bytes.NewReader(payload),
@@ -169,6 +181,11 @@ func TestPluginProcessE2E(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		return result
+	}
+	submit := func(requestID, mime string, payload []byte, state engine.TargetState) {
+		t.Helper()
+		result := commit(requestID, mime, payload)
 		await(requestID, func() bool {
 			op, err := e.GetOperation(ctx, result.OperationID)
 			return err == nil && len(op.Targets) == 1 && op.Targets[0].TargetID == ch.ID && op.Targets[0].State == state
@@ -249,13 +266,102 @@ func TestPluginProcessE2E(t *testing.T) {
 		t.Fatal("received payload mismatch")
 	}
 
+	setImages := func(enabled bool) {
+		t.Helper()
+		state, err := e.GetState(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		policy := engine.DefaultBackendPolicy()
+		policy.Images = enabled
+		state.Settings.Value.BackendPolicies = map[engine.PluginID]engine.BackendSyncPolicy{"unic.wxime": policy}
+		_, err = e.UpdateSettings(ctx, engine.UpdateSettingsRequest{
+			ExpectedRevision: state.Settings.Revision,
+			Value:            state.Settings.Value,
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	offerImage := func(payload string) {
+		t.Helper()
+		if err := os.Remove(fixture.path("acknowledged")); err != nil {
+			t.Fatal(err)
+		}
+		put("incoming", payload)
+		await("image acknowledgment", func() bool {
+			_, err := os.Stat(fixture.path("acknowledged"))
+			return err == nil
+		})
+	}
+	setImages(false)
+	if err := os.Remove(fixture.path("sent-image")); err != nil {
+		t.Fatal(err)
+	}
+	if result := commit("out-image-disabled", pngMIME, img.Bytes()); result.SyncDisposition != engine.SyncPolicyFilter {
+		t.Fatalf("host did not disable outbound image sync: %s", result.SyncDisposition)
+	}
+	if _, err := os.Stat(fixture.path("sent-image")); !os.IsNotExist(err) {
+		t.Fatal("disabled image reached the provider")
+	}
+	var blockedImage bytes.Buffer
+	if err := png.Encode(&blockedImage, image.NewRGBA(image.Rect(0, 0, 1, 1))); err != nil {
+		t.Fatal(err)
+	}
+	offerImage(blockedImage.String())
+	externalImages := engine.ListHistoryRequest{Filter: engine.HistoryFilter{
+		OriginKinds: []engine.HistoryOriginKind{engine.OriginKindExternal},
+	}}
+	page, err = e.ListHistory(ctx, externalImages)
+	if err != nil || len(page.Items) != 1 {
+		t.Fatalf("disabled image entered external history: %+v %v", page, err)
+	}
+	setImages(true)
+	submit("out-image-reenabled", pngMIME, img.Bytes(), engine.TargetSent)
+	offerImage(img.String())
+	await("incoming image in history", func() bool {
+		page, err = e.ListHistory(ctx, externalImages)
+		return err == nil && len(page.Items) == 2
+	})
+	imageLease, err := e.RetainHistoryContent(ctx, page.Items[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.ReleaseContent(ctx, imageLease.LeaseID)
+	part := imageLease.Content.Parts[0]
+	body, err = e.ReadContent(ctx, imageLease.LeaseID, part.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	incomingImage, err := io.ReadAll(body)
+	_ = body.Close()
+	if err != nil || part.MIME != pngMIME || !bytes.Equal(incomingImage, img.Bytes()) {
+		t.Fatal("received image payload mismatch")
+	}
+
+	if err := e.Close(ctx); err != nil {
+		t.Fatal(err)
+	}
+	opts.Plugins[0].Config = plugin.Config{}
+	e = start()
+	_, err = e.GetChannel(ctx, ch.ID)
+	if channelErr, ok := err.(*engine.Error); !ok || channelErr.Code != engine.CodeNotFound {
+		t.Fatalf("expected the old local authorization to be gone: %v", err)
+	}
+	ch, err = e.PairChannel(ctx, engine.PairChannelRequest{BackendID: "unic.wxime"})
+	if err != nil || !ch.Enabled {
+		t.Fatalf("could not resume the existing group after removing legacy settings: %v", err)
+	}
+	submit("out-image-after-upgrade", pngMIME, img.Bytes(), engine.TargetSent)
+
 	if path := os.Getenv("WXIME_E2E_RECEIPT"); path != "" {
 		receipt, err := json.MarshalIndent(map[string]any{
 			"scenario":                 "engine-plugin-subprocess-with-local-provider",
-			"checks":                   []string{"pair-and-resume", "send-text", "send-image", "provider-rejection", "unapproved-group", "restart", "pause-and-resume", "receive-history-and-ack"},
+			"checks":                   []string{"pair-and-resume", "send-text", "send-image", "provider-rejection", "unapproved-group", "restart", "pause-and-resume", "receive-history-and-ack", "disable-and-reenable-bidirectional-image-sync-via-host-policy", "resume-existing-group-after-removing-legacy-settings"},
 			"sent_text_sha256":         fmt.Sprintf("%x", sha256.Sum256(text)),
 			"sent_image_sha256":        fmt.Sprintf("%x", sha256.Sum256(img.Bytes())),
 			"received_text_sha256":     fmt.Sprintf("%x", sha256.Sum256(data)),
+			"received_image_sha256":    fmt.Sprintf("%x", sha256.Sum256(incomingImage)),
 			"official_device_verified": false,
 		}, "", "  ")
 		if err != nil {

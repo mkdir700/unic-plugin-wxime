@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	_ "embed"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -31,12 +30,8 @@ const (
 	maxPixels = 16 << 20
 )
 
-//go:embed settings.schema.json
-var schema []byte
-
 type Backend struct {
 	open     func(context.Context, bool) (provider, error)
-	images   bool
 	receiver plugin.Receiver
 	resolver plugin.ChannelResolver
 	gate     chan struct{}
@@ -69,26 +64,14 @@ func New() *Backend {
 
 func (*Backend) Spec() plugin.Spec {
 	return plugin.Spec{
-		ID: "unic.wxime", Version: "0.1.1", APIVersion: 1,
+		ID: "unic.wxime", Version: "0.1.2", APIVersion: 1,
 		Capabilities:     []string{plugin.CapSyncBackend},
 		TransportKind:    plugin.TransportObjectStore,
 		ExternalChannels: true,
-		SettingsSHA256:   fmt.Sprintf("%x", sha256.Sum256(schema)),
 	}
 }
 
-func (b *Backend) Init(_ context.Context, _ plugin.Host, cfg plugin.Config) error {
-	value, present := cfg["images"]
-	if !present {
-		return nil
-	}
-	var ok bool
-	b.images, ok = value.(bool)
-	if !ok {
-		return plugin.ErrInvalidConfig
-	}
-	return nil
-}
+func (*Backend) Init(context.Context, plugin.Host, plugin.Config) error { return nil }
 
 func (b *Backend) SetReceiver(r plugin.Receiver) {
 	b.receiver = r
@@ -177,7 +160,7 @@ func groupContext(group uint64) []byte {
 
 func (b *Backend) Submit(ctx context.Context, v plugin.SyncView, h plugin.SyncHost) (bool, error) {
 	part := slices.IndexFunc(v.Parts, func(p plugin.SyncPart) bool {
-		return b.images && p.MIME == pngMIME && p.Size > 0 && p.Size <= maxImage
+		return !p.File && p.MIME == pngMIME && p.Size > 0 && p.Size <= maxImage
 	})
 	if part < 0 {
 		part = slices.IndexFunc(v.Parts, func(p plugin.SyncPart) bool {
@@ -326,7 +309,7 @@ func (b *Backend) receivedPart(value sdk.ClipboardContent) plugin.ReceivedPart {
 	if value.Text != nil && len(*value.Text) > 0 && len(*value.Text) <= maxText {
 		return plugin.ReceivedPart{MIME: textMIME, Data: []byte(*value.Text)}
 	}
-	if !b.images || value.Image == nil || value.Image.Bytes <= 0 || value.Image.Bytes > maxImage {
+	if value.Image == nil || value.Image.Bytes <= 0 || value.Image.Bytes > maxImage {
 		return plugin.ReceivedPart{}
 	}
 	file, err := os.Open(value.Image.Path)

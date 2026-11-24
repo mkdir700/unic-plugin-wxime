@@ -3,8 +3,8 @@
 `unic.wxime` connects UniClipboard to a WeType clipboard group through the
 [WeType Go SDK](https://github.com/mkdir700/wx-ime-sdk). Install it explicitly.
 Each backend instance uses its own WeType device identity and private state.
-Text is enabled by default. Image sync is opt-in. The provider receipt means
-the service accepted the content.
+The UniClipboard backend sync policy controls text and image sync in both
+directions. The provider receipt means the service accepted the content.
 
 ## Install and pair
 
@@ -13,19 +13,19 @@ Use a `unic` and `unicd` build from the UniClipboard
 or a later compatible release. Use an initialized UniClipboard profile.
 
 Install the prebuilt plugin for macOS (13+), Linux, or Windows (`amd64` / `arm64`).
-The prebuilt binaries statically link OpenSSL `libcrypto` and require no local Go
-toolchain or OpenSSL installation. The installer verifies the SHA-256 digest.
+The prebuilt binaries statically link OpenSSL `libcrypto`. The installer verifies
+the SHA-256 digest.
 
 ```sh
-unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.1
+unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.2
 unic plugin enable unic.wxime
 ```
 
-To build from source instead (`--build`), you need Go 1.27.3 or later on `PATH`,
-CGO, a C compiler, `pkg-config`, and OpenSSL development files with secp128r1
-support (`GOTOOLCHAIN=local go version`). On macOS, install `openssl@3` and
-`pkg-config` with Homebrew and export `PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig"`.
-On Debian or Ubuntu, install `build-essential`, `pkg-config`, and `libssl-dev`.
+To build from source (`--build`), use Go 1.27.3 or later on `PATH`, CGO, a C
+compiler, `pkg-config`, and OpenSSL development files with secp128r1 support.
+On macOS, install `openssl@3` and `pkg-config` with Homebrew and export
+`PKG_CONFIG_PATH="$(brew --prefix openssl@3)/lib/pkgconfig"`. On Debian or
+Ubuntu, install `build-essential`, `pkg-config`, and `libssl-dev`.
 
 Restart the service after enabling the plugin. In WeType, generate a pairing
 code for an authorized group. Run the following command. Enter the code at the
@@ -45,11 +45,14 @@ text and, when enabled, PNG and JPEG images. It sends UTF-8 text up to 1 MiB
 and PNG images up to 16 MiB, subject to the Engine and provider limits.
 File transfer is outside the external-channel profile.
 
-Enable `images` in the plugin settings and restart the service to opt in.
-Engine invalidates the old local channel after a plugin settings change.
-Run `unic channel pair unic.wxime --resume` to authorize the existing WeType
-group again. The same command also recovers a pairing that completed at the
-provider before the local channel was saved.
+Use **Sync images** under the backend's **Sync policy** in UniClipboard.
+Policy changes apply while the service is running. The policy also applies to
+existing installations that previously saved a separate plugin image setting.
+
+After upgrading from a version with the separate plugin setting, run
+`unic channel pair unic.wxime --resume` once to restore the local authorization
+for the existing WeType group. The same command recovers a pairing that
+completed at the provider before the local channel was saved.
 
 Use the existing external-channel controls to pause the channel or disable
 clipboard auto-apply. Removing the local channel removes its UniClipboard
