@@ -1,7 +1,6 @@
 manifest_version = 1
 id = "unic.wxime"
 version = "0.1.2"
-icon = "text"
 api_version = 1
 kind = "go"
 module = "github.com/mkdir700/unic-plugin-wxime"

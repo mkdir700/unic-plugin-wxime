@@ -16,6 +16,10 @@ Install the prebuilt plugin for macOS (13+), Linux, or Windows (`amd64` / `arm64
 The prebuilt binaries statically link OpenSSL `libcrypto`. The installer verifies
 the SHA-256 digest.
 
+Use the UniClipboard plugin marketplace to install on a host without support
+for plugin manifest icons. On hosts with manifest icon support, you can also
+install the release tag directly.
+
 ```sh
 unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.2
 unic plugin enable unic.wxime
