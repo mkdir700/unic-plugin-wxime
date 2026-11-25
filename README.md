@@ -3,12 +3,14 @@
 `unic.wxime` connects UniClipboard to a WeType clipboard group through the
 [WeType Go SDK](https://github.com/mkdir700/wx-ime-sdk). Install it explicitly.
 Each backend instance uses its own WeType device identity and private state.
+A new WeType device uses `Unic-<hostname>` as its name. Existing identities
+keep their saved names.
 The UniClipboard backend sync policy controls text and image sync in both
 directions. The provider receipt means the service accepted the content.
 
 ## Install and pair
 
-Use an initialized UniClipboard v2 profile. Version 0.1.3 requires a host
+Use an initialized UniClipboard v2 profile. Version 0.1.4 requires a host
 that supports the `image_files_as_images` manifest field. This field is
 available starting with Desktop 2.0.0-build.6 and CLI 2.0.0-build.5.
 
@@ -17,7 +19,7 @@ The prebuilt binaries statically link OpenSSL `libcrypto`. The installer verifie
 the SHA-256 digest.
 
 ```sh
-unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.3
+unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.4
 unic plugin enable unic.wxime
 ```
 
@@ -70,5 +72,6 @@ go build -mod=readonly ./cmd/unic-plugin-wxime
 ```
 
 The process test drives the public Engine API and the real streamed plugin RPC
-through a child process with a local provider fixture. The pinned SDK has a
-separate end-to-end suite for its WeType HTTP and file transports.
+through a child process with a local provider fixture. It also verifies device
+names and identity reuse through the real SDK's offline startup path. The pinned
+SDK has a separate end-to-end suite for its WeType HTTP and file transports.

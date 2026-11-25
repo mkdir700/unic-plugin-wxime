@@ -10,10 +10,12 @@ import (
 	"image/png"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	sdk "github.com/mkdir700/wx-ime-sdk/go"
 	"github.com/uniclipboard/unic/engine"
@@ -94,6 +96,16 @@ func (p fixtureProvider) Acknowledge(context.Context, sdk.ReceivedID) error {
 func (fixtureProvider) Close() error { return nil }
 
 func TestMain(m *testing.M) {
+	if mode := os.Getenv("WXIME_E2E_OFFLINE_IDENTITY"); mode != "" {
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		// The SDK saves the identity before making its first network request.
+		if _, err := openWeType(ctx, mode == "create"); err != context.Canceled {
+			fmt.Fprintln(os.Stderr, "open offline identity:", err)
+			os.Exit(1)
+		}
+		os.Exit(0)
+	}
 	if dir := os.Getenv("WXIME_E2E_FIXTURE"); dir != "" {
 		backend := New()
 		backend.open = func(context.Context, bool) (provider, error) {
@@ -105,6 +117,62 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	os.Exit(m.Run())
+}
+
+func checkDeviceNames(t *testing.T, exe string) {
+	t.Helper()
+	hostname, _ := os.Hostname()
+	hostname = strings.TrimSpace(strings.ToValidUTF8(hostname, ""))
+	if hostname == "" {
+		hostname = "Device"
+	}
+	for len(hostname) > 123 {
+		_, size := utf8.DecodeLastRuneInString(hostname)
+		hostname = hostname[:len(hostname)-size]
+	}
+	for _, name := range []string{"Unic-" + hostname, "UniClipboard"} {
+		dir := t.TempDir()
+		identity := filepath.Join(dir, stateDir, "identity.json")
+		var previous []byte
+		var err error
+		if name == "UniClipboard" {
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			if _, err := sdk.Open(ctx, sdk.ClientOptions{StateDir: filepath.Dir(identity), DeviceName: name}); err != context.Canceled {
+				t.Fatal("create legacy identity offline:", err)
+			}
+			previous, err = os.ReadFile(identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		for attempt := 0; attempt < 2; attempt++ {
+			mode := "reopen"
+			if previous == nil {
+				mode = "create"
+			}
+			cmd := exec.Command(exe, "-test.run=^$")
+			cmd.Dir = dir
+			cmd.Env = append(os.Environ(), "WXIME_E2E_OFFLINE_IDENTITY="+mode)
+			if output, err := cmd.CombinedOutput(); err != nil {
+				t.Fatalf("open offline identity: %v\n%s", err, output)
+			}
+			raw, err := os.ReadFile(identity)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var saved struct {
+				Name string `json:"device_name"`
+			}
+			if err := json.Unmarshal(raw, &saved); err != nil || saved.Name != name {
+				t.Fatalf("saved device name = %q, want %q: %v", saved.Name, name, err)
+			}
+			if previous != nil && !bytes.Equal(raw, previous) {
+				t.Fatal("reopening changed the persisted identity")
+			}
+			previous = raw
+		}
+	}
 }
 
 func TestPluginProcessE2E(t *testing.T) {
@@ -119,6 +187,7 @@ func TestPluginProcessE2E(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	checkDeviceNames(t, exe)
 	binary, err := os.ReadFile(exe)
 	if err != nil {
 		t.Fatal(err)
@@ -362,6 +431,7 @@ func TestPluginProcessE2E(t *testing.T) {
 			"sent_image_sha256":        fmt.Sprintf("%x", sha256.Sum256(img.Bytes())),
 			"received_text_sha256":     fmt.Sprintf("%x", sha256.Sum256(data)),
 			"received_image_sha256":    fmt.Sprintf("%x", sha256.Sum256(incomingImage)),
+			"verified_device_names":    []string{"Unic-<hostname> on first open", "saved name and identity on reopen"},
 			"official_device_verified": false,
 		}, "", "  ")
 		if err != nil {
