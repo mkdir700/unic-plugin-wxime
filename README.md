@@ -10,7 +10,7 @@ directions. The provider receipt means the service accepted the content.
 
 ## Install and pair
 
-Use an initialized UniClipboard v2 profile. Version 0.1.3 requires a host
+Use an initialized UniClipboard v2 profile. Version 0.1.4 requires a host
 that supports the `image_files_as_images` manifest field. This field is
 available starting with Desktop 2.0.0-build.6 and CLI 2.0.0-build.5.
 
@@ -19,7 +19,7 @@ The prebuilt binaries statically link OpenSSL `libcrypto`. The installer verifie
 the SHA-256 digest.
 
 ```sh
-unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.3
+unic plugin install https://github.com/mkdir700/unic-plugin-wxime --ref v0.1.4
 unic plugin enable unic.wxime
 ```
 
