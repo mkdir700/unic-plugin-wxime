@@ -3,6 +3,8 @@
 `unic.wxime` connects UniClipboard to a WeType clipboard group through the
 [WeType Go SDK](https://github.com/mkdir700/wx-ime-sdk). Install it explicitly.
 Each backend instance uses its own WeType device identity and private state.
+A new WeType device uses `Unic-<hostname>` as its name. Existing identities
+keep their saved names.
 The UniClipboard backend sync policy controls text and image sync in both
 directions. The provider receipt means the service accepted the content.
 
@@ -70,5 +72,6 @@ go build -mod=readonly ./cmd/unic-plugin-wxime
 ```
 
 The process test drives the public Engine API and the real streamed plugin RPC
-through a child process with a local provider fixture. The pinned SDK has a
-separate end-to-end suite for its WeType HTTP and file transports.
+through a child process with a local provider fixture. It also verifies device
+names and identity reuse through the real SDK's offline startup path. The pinned
+SDK has a separate end-to-end suite for its WeType HTTP and file transports.

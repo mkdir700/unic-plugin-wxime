@@ -2,8 +2,13 @@ package wxime
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
+	"unicode/utf8"
 
 	sdk "github.com/mkdir700/wx-ime-sdk/go"
 	"github.com/uniclipboard/unic/plugin/rpc"
@@ -29,11 +34,48 @@ func openWeType(ctx context.Context, create bool) (provider, error) {
 			return nil, err
 		}
 	}
-	client, err := sdk.Open(ctx, sdk.ClientOptions{StateDir: stateDir, DeviceName: "UniClipboard"})
+	name, err := weTypeDeviceName()
+	if err != nil {
+		return nil, err
+	}
+	client, err := sdk.Open(ctx, sdk.ClientOptions{StateDir: stateDir, DeviceName: name})
 	if err != nil {
 		return nil, err
 	}
 	return weType{client}, nil
+}
+
+func weTypeDeviceName() (string, error) {
+	// The SDK requires the saved name when reopening a device identity.
+	f, err := os.Open(filepath.Join(stateDir, "identity.json"))
+	if err == nil {
+		defer f.Close()
+		var identity struct {
+			Name string `json:"device_name"`
+		}
+		if err := json.NewDecoder(io.LimitReader(f, 8<<20)).Decode(&identity); err != nil {
+			return "", err
+		}
+		return identity.Name, nil
+	}
+	if !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	const prefix = "Unic-"
+	const maxHostnameBytes = 128 - len(prefix) // SDK name limit in UTF-8 bytes.
+	hostname, _ := os.Hostname()
+	hostname = strings.TrimSpace(strings.ToValidUTF8(hostname, ""))
+	if hostname == "" {
+		hostname = "Device"
+	}
+	if len(hostname) > maxHostnameBytes {
+		end := maxHostnameBytes
+		for !utf8.RuneStart(hostname[end]) {
+			end--
+		}
+		hostname = hostname[:end]
+	}
+	return prefix + hostname, nil
 }
 
 func (c weType) Group(ctx context.Context) (uint64, error) {
