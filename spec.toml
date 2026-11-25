@@ -1,6 +1,6 @@
 manifest_version = 1
 id = "unic.wxime"
-version = "0.1.4"
+version = "0.1.5"
 api_version = 1
 kind = "go"
 module = "github.com/mkdir700/unic-plugin-wxime"
@@ -9,53 +9,3 @@ capabilities = ["sync_backend"]
 transport_kind = "object_store"
 external_channels = true
 image_files_as_images = true
-
-[[artifacts]]
-goos = "darwin"
-goarch = "amd64"
-release = "v0.1.4"
-asset = "unic-plugin-wxime_darwin_amd64.tar.gz"
-executable = "unic-plugin-wxime"
-sha256 = "1a62545f8fd6d78e7f3523dea108157f71d536dd06c86498e0df8f10041ed015"
-minimum_os = "13.0"
-
-[[artifacts]]
-goos = "darwin"
-goarch = "arm64"
-release = "v0.1.4"
-asset = "unic-plugin-wxime_darwin_arm64.tar.gz"
-executable = "unic-plugin-wxime"
-sha256 = "ca84f8416f64efa2066529d6adea3a35eb61ea829c90b9c275e5ddbac94cb8ae"
-minimum_os = "13.0"
-
-[[artifacts]]
-goos = "linux"
-goarch = "amd64"
-release = "v0.1.4"
-asset = "unic-plugin-wxime_linux_amd64.tar.gz"
-executable = "unic-plugin-wxime"
-sha256 = "dd83772fcb923dbdff017f68a712c01a15fbef04f94097bc7932c84a554ec1da"
-
-[[artifacts]]
-goos = "linux"
-goarch = "arm64"
-release = "v0.1.4"
-asset = "unic-plugin-wxime_linux_arm64.tar.gz"
-executable = "unic-plugin-wxime"
-sha256 = "7d9c9892d3da7c33a2f24fef013d037f3e8bf79cd0350a549d02a33997ce4e21"
-
-[[artifacts]]
-goos = "windows"
-goarch = "amd64"
-release = "v0.1.4"
-asset = "unic-plugin-wxime_windows_amd64.tar.gz"
-executable = "unic-plugin-wxime.exe"
-sha256 = "959f9ed202c56bb330d00d958ff726827ff50f116c99f6a05e6ab792f92b8079"
-
-[[artifacts]]
-goos = "windows"
-goarch = "arm64"
-release = "v0.1.4"
-asset = "unic-plugin-wxime_windows_arm64.tar.gz"
-executable = "unic-plugin-wxime.exe"
-sha256 = "f8297b19f902e08607408994085aa0feae7b0a77e72e9e3eb8c026e7990e0c10"

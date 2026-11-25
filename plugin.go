@@ -62,7 +62,7 @@ func New() *Backend {
 
 func (*Backend) Spec() plugin.Spec {
 	return plugin.Spec{
-		ID: "unic.wxime", Version: "0.1.4", APIVersion: 1,
+		ID: "unic.wxime", Version: "0.1.5", APIVersion: 1,
 		Capabilities:     []string{plugin.CapSyncBackend},
 		TransportKind:    plugin.TransportObjectStore,
 		ExternalChannels: true,
