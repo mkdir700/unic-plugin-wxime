@@ -1,15 +1,11 @@
 package wxime
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"image"
-	_ "image/jpeg"
-	"image/png"
 	"io"
 	"os"
 	"slices"
@@ -34,6 +30,7 @@ type Backend struct {
 	open     func(context.Context, bool) (provider, error)
 	receiver plugin.Receiver
 	resolver plugin.ChannelResolver
+	diag     *diagLog
 	gate     chan struct{}
 	client   provider        // protected by gate
 	pending  *sdk.ReceivedID // owned by the receive worker
@@ -55,6 +52,7 @@ type sendJob struct {
 func New() *Backend {
 	return &Backend{
 		open: openWeType,
+		diag: newDiagLog(),
 		gate: make(chan struct{}, 1),
 		jobs: make(chan sendJob, 1),
 		slot: make(chan struct{}, 1),
@@ -64,7 +62,7 @@ func New() *Backend {
 
 func (*Backend) Spec() plugin.Spec {
 	return plugin.Spec{
-		ID: "unic.wxime", Version: "0.1.4", APIVersion: 1,
+		ID: "unic.wxime", Version: "0.1.5", APIVersion: 1,
 		Capabilities:     []string{plugin.CapSyncBackend},
 		TransportKind:    plugin.TransportObjectStore,
 		ExternalChannels: true,
@@ -210,53 +208,68 @@ func (b *Backend) run(ctx context.Context) {
 func (b *Backend) send(life context.Context, job sendJob) {
 	ctx, cancel := context.WithTimeout(life, 45*time.Second)
 	defer cancel()
-	sent := b.publish(ctx, job)
+	sent, err := b.publish(ctx, job)
+	if sent == "" && err != nil {
+		b.diag.recordEvent("", "publish_failed", fmt.Sprintf("mime=%s size=%d class=%s", job.part.MIME, job.part.Size, classifyError(err)))
+	}
 	for _, target := range job.view.Targets {
 		state := plugin.SyncFailed
+		var cause error
 		if target == sent {
 			state = plugin.SyncSent
+		} else {
+			cause = err
 		}
-		job.host.Report(target, state, nil)
+		job.host.Report(target, state, cause)
 	}
 }
 
-func (b *Backend) publish(ctx context.Context, job sendJob) string {
-	if b.acquire(ctx) != nil {
-		return ""
+func (b *Backend) publish(ctx context.Context, job sendJob) (string, error) {
+	if err := b.acquire(ctx); err != nil {
+		return "", err
 	}
 	defer func() { <-b.gate }()
 	client, err := b.getClient(ctx, false)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	group, err := client.Group(ctx)
-	if err != nil || group == 0 {
-		return ""
+	if err != nil {
+		return "", err
+	}
+	if group == 0 {
+		return "", sdk.ErrNotPaired
 	}
 	id, err := b.resolver.ResolveChannel(ctx, groupContext(group))
-	if err != nil || id == "" || !slices.Contains(job.view.Targets, id) {
-		return ""
+	if err != nil {
+		return "", err
+	}
+	if id == "" || !slices.Contains(job.view.Targets, id) {
+		return "", sdk.ErrGroupChanged
 	}
 	reader, err := job.part.Open(ctx)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	defer reader.Close()
 	data, err := io.ReadAll(io.LimitReader(reader, job.part.Size+1))
-	if err != nil || int64(len(data)) != job.part.Size {
-		return ""
+	if err != nil {
+		return "", err
+	}
+	if int64(len(data)) != job.part.Size {
+		return "", errors.New("wxime: outbound part size mismatch")
 	}
 	if job.part.MIME == pngMIME {
 		_, err = client.SendImageToGroup(ctx, group, data)
 	} else if utf8.Valid(data) {
 		_, err = client.SendTextToGroup(ctx, group, string(data))
 	} else {
-		return ""
+		return "", errors.New("wxime: outbound text is not valid UTF-8")
 	}
 	if err != nil {
-		return ""
+		return "", err
 	}
-	return id
+	return id, nil
 }
 
 func (b *Backend) poll(life context.Context) {
@@ -268,6 +281,10 @@ func (b *Backend) poll(life context.Context) {
 	defer func() { <-b.gate }()
 	client, err := b.getClient(ctx, false)
 	if err != nil {
+		if !errors.Is(err, os.ErrNotExist) {
+			class := classifyError(err)
+			b.diag.recordEvent("poll_open:"+class, "poll_open_failed", "class="+class)
+		}
 		return
 	}
 	if b.pending != nil {
@@ -275,66 +292,98 @@ func (b *Backend) poll(life context.Context) {
 		return
 	}
 	group, err := client.Group(ctx)
-	if err != nil || group == 0 {
+	if err != nil {
+		class := classifyError(err)
+		b.diag.recordEvent("poll_group:"+class, "poll_group_failed", "class="+class)
+		return
+	}
+	if group == 0 {
 		return
 	}
 	id, err := b.resolver.ResolveChannel(ctx, groupContext(group))
-	if err != nil || id == "" {
+	if err != nil {
+		class := classifyError(err)
+		b.diag.recordEvent("poll_resolve:"+class, "poll_resolve_failed", "class="+class)
+		return
+	}
+	if id == "" {
 		return
 	}
 	value, err := client.PollClipboardOnceFromGroup(ctx, group)
-	if err != nil || value == nil {
+	if err != nil {
+		class := classifyError(err)
+		b.diag.recordEvent("poll_fetch:"+class, "poll_fetch_failed", "class="+class)
 		return
 	}
-	if part := b.receivedPart(value.Content); part.MIME != "" && value.ID.Group == group {
+	b.diag.clearDedupe("poll_")
+	if value == nil {
+		return
+	}
+	deliverCtx, deliverCancel := context.WithTimeout(life, 30*time.Second)
+	defer deliverCancel()
+	if value.ID.Group != group {
+		b.diag.recordEvent("", "receive_skipped", fmt.Sprintf("version=%d reason=group_mismatch", value.ID.Version))
+		b.ack(deliverCtx, client, value.ID)
+		return
+	}
+	part, hint, inBytes, err := b.receivedPart(value.Content)
+	if err != nil {
+		b.diag.recordEvent("", "receive_rejected", fmt.Sprintf("version=%d format=%s bytes=%d class=%s", value.ID.Version, hint, inBytes, classifyError(err)))
+	} else if part.MIME != "" {
 		transfer := sha256.Sum256(fmt.Appendf(nil, "%d/%d/%d/%s", value.ID.Group, value.ID.Version, value.ID.FromUin, value.ID.TraceID))
 		view := sha256.Sum256(append([]byte(part.MIME+"\x00"), part.Data...))
-		_ = b.receiver.Receive(ctx, id, plugin.Received{
+		if rerr := b.receiver.Receive(deliverCtx, id, plugin.Received{
 			Transfer: fmt.Sprintf("%x", transfer), View: fmt.Sprintf("%x", view),
 			Parts: []plugin.ReceivedPart{part},
-		})
+		}); rerr != nil {
+			b.diag.recordEvent("", "receive_declined", fmt.Sprintf("version=%d mime=%s bytes=%d class=%s", value.ID.Version, part.MIME, len(part.Data), classifyError(rerr)))
+		}
 	}
-	b.ack(ctx, client, value.ID)
+	b.ack(deliverCtx, client, value.ID)
 }
 
 func (b *Backend) ack(ctx context.Context, client provider, id sdk.ReceivedID) {
 	if err := client.Acknowledge(ctx, id); err != nil {
 		b.pending = &id
+		class := classifyError(err)
+		b.diag.recordEvent("ack:"+class, "receive_ack_failed", fmt.Sprintf("version=%d class=%s", id.Version, class))
 		return
 	}
 	b.pending = nil
 }
 
-func (b *Backend) receivedPart(value sdk.ClipboardContent) plugin.ReceivedPart {
-	if value.Text != nil && len(*value.Text) > 0 && len(*value.Text) <= maxText {
-		return plugin.ReceivedPart{MIME: textMIME, Data: []byte(*value.Text)}
+var errInvalidText = errors.New("wxime: text payload empty or exceeds size limit")
+
+func (b *Backend) receivedPart(value sdk.ClipboardContent) (plugin.ReceivedPart, string, int, error) {
+	if value.Text != nil {
+		n := len(*value.Text)
+		if n == 0 || n > maxText {
+			return plugin.ReceivedPart{}, "text", n, errInvalidText
+		}
+		return plugin.ReceivedPart{MIME: textMIME, Data: []byte(*value.Text)}, "text", n, nil
 	}
-	if value.Image == nil || value.Image.Bytes <= 0 || value.Image.Bytes > maxImage {
-		return plugin.ReceivedPart{}
+	if value.Image == nil {
+		return plugin.ReceivedPart{}, "empty", 0, errImageUnsupportedFormat
+	}
+	if value.Image.Bytes <= 0 || value.Image.Bytes > maxImage {
+		return plugin.ReceivedPart{}, "image", value.Image.Bytes, errImageTooLarge
 	}
 	file, err := os.Open(value.Image.Path)
 	if err != nil {
-		return plugin.ReceivedPart{}
+		return plugin.ReceivedPart{}, "image", value.Image.Bytes, err
 	}
 	defer file.Close()
 	data, err := io.ReadAll(io.LimitReader(file, int64(value.Image.Bytes)+1))
-	if err != nil || len(data) != value.Image.Bytes {
-		return plugin.ReceivedPart{}
-	}
-	cfg, format, err := image.DecodeConfig(bytes.NewReader(data))
-	if err != nil || cfg.Width <= 0 || cfg.Height <= 0 || cfg.Width > maxPixels/cfg.Height {
-		return plugin.ReceivedPart{}
-	}
-	if format == "png" {
-		return plugin.ReceivedPart{MIME: pngMIME, Data: data}
-	}
-	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return plugin.ReceivedPart{}
+		return plugin.ReceivedPart{}, "image", value.Image.Bytes, err
 	}
-	var out bytes.Buffer
-	if png.Encode(&out, img) != nil || out.Len() > maxImage {
-		return plugin.ReceivedPart{}
+	hint := detectImageFormatHint(data)
+	if len(data) != value.Image.Bytes {
+		return plugin.ReceivedPart{}, hint, len(data), errImageDecodeFailed
 	}
-	return plugin.ReceivedPart{MIME: pngMIME, Data: out.Bytes()}
+	pngBytes, err := convertImageToPNG(data)
+	if err != nil {
+		return plugin.ReceivedPart{}, hint, len(data), err
+	}
+	return plugin.ReceivedPart{MIME: pngMIME, Data: pngBytes}, hint, len(data), nil
 }
