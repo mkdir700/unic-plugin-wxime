@@ -17,6 +17,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/gen2brain/h265/heic"
 	sdk "github.com/mkdir700/wx-ime-sdk/go"
 	"github.com/uniclipboard/unic/engine"
 	"github.com/uniclipboard/unic/plugin"
@@ -79,6 +80,14 @@ func (p fixtureProvider) PollClipboardOnceFromGroup(_ context.Context, group uin
 		}
 		return &sdk.ReceivedClipboard{
 			ID: sdk.ReceivedID{Group: group, Version: uint64(cfg.Width) + 1, FromUin: 10, TraceID: "synthetic-image"},
+			Content: sdk.ClipboardContent{Image: &sdk.DownloadedImage{
+				Path: p.path("incoming"), Bytes: len(data),
+			}},
+		}, nil
+	}
+	if isISOBMFF(data) {
+		return &sdk.ReceivedClipboard{
+			ID: sdk.ReceivedID{Group: group, Version: 100, FromUin: 10, TraceID: "synthetic-heic"},
 			Content: sdk.ClipboardContent{Image: &sdk.DownloadedImage{
 				Path: p.path("incoming"), Bytes: len(data),
 			}},
@@ -408,6 +417,35 @@ func TestPluginProcessE2E(t *testing.T) {
 		t.Fatal("received image payload mismatch")
 	}
 
+	var incomingHEIC bytes.Buffer
+	if err := heic.Encode(&incomingHEIC, makeQuadrantImage(32, 24), heic.EncodeOptions{Quality: 90}); err != nil {
+		t.Fatal(err)
+	}
+	offerImage(incomingHEIC.String())
+	await("incoming HEIC image converted to PNG in history", func() bool {
+		page, err = e.ListHistory(ctx, externalImages)
+		return err == nil && len(page.Items) == 3
+	})
+	heicLease, err := e.RetainHistoryContent(ctx, page.Items[0].ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer e.ReleaseContent(ctx, heicLease.LeaseID)
+	heicPart := heicLease.Content.Parts[0]
+	body, err = e.ReadContent(ctx, heicLease.LeaseID, heicPart.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	convertedHEIC, err := io.ReadAll(body)
+	_ = body.Close()
+	if err != nil || heicPart.MIME != pngMIME {
+		t.Fatalf("received HEIC image MIME = %q, err = %v", heicPart.MIME, err)
+	}
+	heicDecoded, err := png.Decode(bytes.NewReader(convertedHEIC))
+	if err != nil || heicDecoded.Bounds().Dx() != 32 || heicDecoded.Bounds().Dy() != 24 {
+		t.Fatalf("received HEIC PNG decode mismatch: err=%v bounds=%v", err, heicDecoded.Bounds())
+	}
+
 	if err := e.Close(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -426,7 +464,7 @@ func TestPluginProcessE2E(t *testing.T) {
 	if path := os.Getenv("WXIME_E2E_RECEIPT"); path != "" {
 		receipt, err := json.MarshalIndent(map[string]any{
 			"scenario":                 "engine-plugin-subprocess-with-local-provider",
-			"checks":                   []string{"pair-and-resume", "send-text", "send-image", "provider-rejection", "unapproved-group", "restart", "pause-and-resume", "receive-history-and-ack", "disable-and-reenable-bidirectional-image-sync-via-host-policy", "resume-existing-group-after-removing-legacy-settings"},
+			"checks":                   []string{"pair-and-resume", "send-text", "send-image", "provider-rejection", "unapproved-group", "restart", "pause-and-resume", "receive-history-and-ack", "disable-and-reenable-bidirectional-image-sync-via-host-policy", "receive-heic-as-png", "resume-existing-group-after-removing-legacy-settings"},
 			"sent_text_sha256":         fmt.Sprintf("%x", sha256.Sum256(text)),
 			"sent_image_sha256":        fmt.Sprintf("%x", sha256.Sum256(img.Bytes())),
 			"received_text_sha256":     fmt.Sprintf("%x", sha256.Sum256(data)),

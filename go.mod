@@ -3,8 +3,10 @@ module github.com/mkdir700/unic-plugin-wxime
 go 1.27.3
 
 require (
+	github.com/gen2brain/h265 v0.2.7
 	github.com/mkdir700/wx-ime-sdk/go v0.0.0-20261122141203-2b9b100fd5cc
 	github.com/uniclipboard/unic v0.0.0-20261122141506-e23ad1071652
+	golang.org/x/image v0.48.0
 )
 
 require (
@@ -18,8 +20,8 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/zeebo/blake3 v0.2.4 // indirect
 	golang.org/x/net v0.61.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
-	golang.org/x/text v0.43.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
+	golang.org/x/text v0.44.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260928230214-8a89bd6388cc // indirect
 	google.golang.org/grpc v1.83.2 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect

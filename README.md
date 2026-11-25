@@ -43,11 +43,17 @@ either directly or through Desktop, to receive updates. Exercise the pairing
 only on accounts and devices you are authorized to use.
 
 The plugin supports the latest clipboard value from WeType. It receives UTF-8
-text and, when enabled, PNG and JPEG images. It sends UTF-8 text up to 1 MiB
-and PNG images up to 16 MiB, subject to the Engine and provider limits.
+text and, when enabled, PNG, JPEG, HEIC/HEIF, WebP, and GIF images, converting
+non-PNG images to PNG with orientation normalized and oversized images
+downsampled to fit the 16 MiB / 16M-pixel limit (using ImageIO on macOS and
+pure-Go decoders on Linux and Windows). It sends UTF-8 text up to 1 MiB and PNG
+images up to 16 MiB, subject to the Engine and provider limits.
 When the host can read a PNG representation of a single copied image file,
 the plugin sends that representation as an image. General file transfer is
-outside the external-channel profile.
+outside the external-channel profile. Metadata-only failure diagnostics (such
+as provider rejection codes or rejected image formats, without clipboard
+content) are written to a bounded `diagnostics.log` in the plugin's private
+working directory.
 
 Use **Sync images** under the backend's **Sync policy** in UniClipboard.
 Policy changes apply while the service is running. The policy also applies to
