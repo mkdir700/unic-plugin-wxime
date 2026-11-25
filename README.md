@@ -8,9 +8,9 @@ directions. The provider receipt means the service accepted the content.
 
 ## Install and pair
 
-Use an initialized UniClipboard v2 profile. Version 0.1.3 requires Desktop
-2.0.0-build.8, CLI 2.0.0-build.7, or a compatible host that supports the
-`image_files_as_images` manifest field.
+Use an initialized UniClipboard v2 profile. Version 0.1.3 requires a host
+that supports the `image_files_as_images` manifest field. This field is
+available starting with Desktop 2.0.0-build.6 and CLI 2.0.0-build.5.
 
 Install the prebuilt plugin for macOS (13+), Linux, or Windows (`amd64` / `arm64`).
 The prebuilt binaries statically link OpenSSL `libcrypto`. The installer verifies
